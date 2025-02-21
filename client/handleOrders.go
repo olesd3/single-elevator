@@ -1,12 +1,7 @@
 package main
 
-type MotorDirection int
-
-const (
-	MD_Up   MotorDirection = 1
-	MD_Down                = -1
-	MD_Stop                = 0
-)
+import "Driver-go/elevio"
+import "fmt"
 
 type ButtonType int
 
@@ -94,7 +89,7 @@ func orderInContainer(order_slice []Order, order_ Order) bool {
 	return false
 }
 
-func sortOrdersInDirection(elevatorOrders []Order, d MotorDirection, posArray [2*numFloors - 1]bool) ([]Order, []Order) {
+func sortOrdersInDirection(elevatorOrders []Order, d elevio.MotorDirection, posArray [2*numFloors - 1]bool) ([]Order, []Order) {
 	//Todo: Lock elevatorOrders with mutex
 
 	highestOrders := findHighestOrders(elevatorOrders)
@@ -123,7 +118,7 @@ func sortOrdersInDirection(elevatorOrders []Order, d MotorDirection, posArray [2
 		//Negative -> The order is below us
 		distOrderToCurrent := float32(order.floor) - currentFloor
 		switch {
-		case (d == MD_Up) && (distOrderToCurrent >= 0.0): //If we're going up and the order is above/same
+		case (d == elevio.MD_Up) && (distOrderToCurrent >= 0.0): //If we're going up and the order is above/same
 			switch {
 			case inHighest:
 				relevantOrders = append(relevantOrders, order)
@@ -132,10 +127,10 @@ func sortOrdersInDirection(elevatorOrders []Order, d MotorDirection, posArray [2
 			case order.direction == down:
 				irrelevantOrders = append(irrelevantOrders, order)
 			}
-		case (d == MD_Up) && (distOrderToCurrent < 0.0): //If we're going up and the order is below/same
+		case (d == elevio.MD_Up) && (distOrderToCurrent < 0.0): //If we're going up and the order is below/same
 			irrelevantOrders = append(irrelevantOrders, order)
 
-		case (d == MD_Down) && (distOrderToCurrent <= 0.0): //If we're going down and the order is below/same
+		case (d == elevio.MD_Down) && (distOrderToCurrent <= 0.0): //If we're going down and the order is below/same
 			//If order is down or cab
 			switch {
 			case inLowest:
@@ -145,7 +140,7 @@ func sortOrdersInDirection(elevatorOrders []Order, d MotorDirection, posArray [2
 			case order.direction == up:
 				irrelevantOrders = append(irrelevantOrders, order)
 			}
-		case (d == MD_Down) && (distOrderToCurrent > 0.0): //If we're going down and the order is up/same
+		case (d == elevio.MD_Down) && (distOrderToCurrent > 0.0): //If we're going down and the order is up/same
 			irrelevantOrders = append(irrelevantOrders, order)
 		}
 
@@ -153,7 +148,7 @@ func sortOrdersInDirection(elevatorOrders []Order, d MotorDirection, posArray [2
 
 	//Now that we've seperated the relevant and irrellevant orders from each other, we sort the relevant part
 	//If the current direction is up, we sort them in ascending order
-	if d == MD_Up {
+	if d == elevio.MD_Up {
 		//Perform bubblesort in ascending order
 		n := len(relevantOrders)
 		for i := 0; i < n-1; i++ {
@@ -168,7 +163,7 @@ func sortOrdersInDirection(elevatorOrders []Order, d MotorDirection, posArray [2
 	}
 
 	//If the current direction is down, we sort them in descending order
-	if d == MD_Down {
+	if d == elevio.MD_Down {
 		//Perform bubblesort in descending order
 		n := len(relevantOrders)
 		for i := 0; i < n-1; i++ {
@@ -185,10 +180,14 @@ func sortOrdersInDirection(elevatorOrders []Order, d MotorDirection, posArray [2
 	return relevantOrders, irrelevantOrders
 }
 
-func sortAllOrders(elevatorOrders *[]Order, d MotorDirection, posArray [2*numFloors - 1]bool) {
+func sortAllOrders(elevatorOrders *[]Order, d elevio.MotorDirection, posArray [2*numFloors - 1]bool) {
 	if len(*elevatorOrders) == 0 || len(*elevatorOrders) == 1 {
 		return
 	}
+
+	// Handle that rare case where the motordirection is MD_Stop and we have multiple orders
+
+	fmt.Printf("Made it past the inital checks in sortAllOrders\n")
 
 	// Creating the datatypes specfic to our function
 	copy_posArray := posArray

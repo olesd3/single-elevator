@@ -9,36 +9,28 @@ import (
 const numFloors = 4
 
 var (
-	elevatorOrders []Order
-	mu1            sync.Mutex
+	elevatorOrders                  []Order
+	mutex_elevatorOrders            sync.Mutex
 )
 
 var (
-	posArray [2*numFloors - 1]bool
-	mu2      sync.Mutex
+	posArray            [2*numFloors - 1]bool
+	mutex_posArray      sync.Mutex
 )
 
-var (
-	lastFloor int
-	mu3       sync.Mutex
-)
+var mutex_d sync.Mutex
 
-var (
-	currentOrder Order
-	mu4          sync.Mutex
-)
+func lockMutexes(mutexes ...*sync.Mutex) {
+    for _, m := range mutexes {
+        m.Lock()
+    }
+}
 
-/*
-var (
-	lastDir MotorDirection
-	mu5     sync.Mutex
-)
-
-var (
-	drv_dir = make(chan elevio.MotorDirection)
-	mu6     sync.Mutex
-)
-*/
+func unlockMutexes(mutexes ...*sync.Mutex) {
+    for _, m := range mutexes {
+        m.Unlock()
+    }
+}
 
 func main() {
 
@@ -49,129 +41,84 @@ func main() {
 	drv_floors2 := make(chan int)
 	drv_obstr := make(chan bool)
 	drv_stop := make(chan bool)
-	drv_idle := make(chan bool)
-	drv_newOrderTrigger := make(chan bool)
+	drv_newOrder := make(chan Order)
+	drv_finishedInitialization := make(chan bool)
 
 	go elevio.PollButtons(drv_buttons)         // Starts checking for button updates
 	go elevio.PollFloorSensor(drv_floors)      // Starts checking for floors updates
 	go elevio.PollFloorSensor2(drv_floors2)    // Starts checking for floors updates (for tracking position)
 	go elevio.PollObstructionSwitch(drv_obstr) // Starts checking for obstruction updates
 	go elevio.PollStopButton(drv_stop)         // Starts checking for stop button presses
-	go handleOrders(drv_newOrderTrigger, )
-
-	mu3.Lock()
-	lastFloor = 0
-	mu3.Unlock()
-
-	mu4.Lock()
-	currentOrder = Order{floor: -1, direction: up, orderType: cab}
-	mu4.Unlock()
-
-	mu5.Lock()
-	lastDir = MD_Stop
-	mu5.Unlock()
 
 	var d elevio.MotorDirection = elevio.MD_Down
-	elevio.SetMotorDirection(d)
-	init := true
 
-	go elevio.GlobalIdleUpdate(drv_idle, &d) // Starts checking for idle updates
+
+	// Section_START ---- Initialization
+
+	go func() {
+		elevio.SetMotorDirection(d)
+		for {
+			a := <- drv_floors
+			if a == 0 {
+				d = elevio.MD_Stop
+				elevio.SetMotorDirection(d)
+				break
+			}
+		}
+		drv_finishedInitialization <- true
+	} ()
+
+	<- drv_finishedInitialization
+
+	fmt.Printf("Initialization finished\n")
+
+	// Section_END ---- Initialization
+
 
 	go trackPosition(drv_floors2, &d) // Starts tracking the position of the elevator
+	go attendToSpecificOrder(&d, drv_floors, drv_newOrder, &posArray)
 
 	for {
 		select {
-		case a := <-drv_buttons:
-			if !init {
+			case a := <-drv_buttons:
+				// Gets a new order
+				// Adds it to elevatorOrders and sorts
 
-				// Turn on button lamp
-				elevio.SetButtonLamp(a.Button, a.Floor, true)
-
-				// Add order
-				if a.Button == elevio.BT_HallUp { // If its a hall button
-					mu1.Lock()
-					addOrder(a.Floor, up, hall)
-					mu1.Unlock()
-				} else if a.Button == elevio.BT_HallDown { // If its a cab button
-					mu1.Lock()
-					addOrder(a.Floor, down, hall)
-					mu1.Unlock()
-				} else if a.Button == elevio.BT_Cab { // If its a cab button
-					mu1.Lock()
-					addOrder(a.Floor, 0, cab)
-					mu1.Unlock()
+				switch {
+					case a.Button == elevio.BT_HallUp:
+						mutex_elevatorOrders.Lock()
+						addOrder(a.Floor, up, hall)
+						mutex_elevatorOrders.Unlock()
+					case a.Button == elevio.BT_HallDown:
+						mutex_elevatorOrders.Lock()
+						addOrder(a.Floor, down, hall)
+						mutex_elevatorOrders.Unlock()
+					case a.Button == elevio.BT_Cab:
+						mutex_elevatorOrders.Lock()
+						addOrder(a.Floor, 0, cab)
+						mutex_elevatorOrders.Unlock()
 				}
 
-				fmt.Printf("Elevator orders: %+v\n", elevatorOrders)
+				
+				lockMutexes(&mutex_elevatorOrders, &mutex_d, &mutex_posArray)
 
-				// Handle orders
+				fmt.Printf("Added order, length of elevatorOrders is now: %d\n", len(elevatorOrders))
+				fmt.Printf("Added order, elevatorOrders is now: %v\n", elevatorOrders)
+				fmt.Printf("Added order, current direction is now: %v\n", d)
+				fmt.Printf("Added order, positionArray is now: %v\n", posArray)
+
+				sortAllOrders(&elevatorOrders, d, posArray)
+				fmt.Printf("Sorted order, length of elevatorOrders is now: %d\n", len(elevatorOrders))
 				
 
-				fmt.Printf("Elevator orders after sorting: %+v\n", elevatorOrders)
+				first_element := elevatorOrders[0]
+				unlockMutexes(&mutex_elevatorOrders, &mutex_d, &mutex_posArray)
+				fmt.Printf("Sorted order\n")
 
-			}
-
-		case a := <-drv_floors:
-			if a != -1 {
-
-				// Decimal floor
-				if a > lastFloor {
-					mu5.Lock()
-					lastDir = MD_Up
-					mu5.Unlock()
-				} else if a < lastFloor {
-					mu5.Lock()
-					lastDir = MD_Down
-					mu5.Unlock()
-				}
-
-				mu3.Lock()
-				lastFloor = a
-				mu3.Unlock()
-
-				fmt.Printf("Current floor: %+v | Last direction: %+v\n", a, lastDir)
-			}
-
-			if init {
-				if a == 0 {
-					d = elevio.MD_Stop
-					elevio.SetMotorDirection(d)
-
-					init = false
-
-					mu3.Lock()
-					lastFloor = a
-					mu3.Unlock()
-				} else {
-					break
-				}
-			} else {
-				fmt.Printf("Current floor: %+v\n", a)
-				if a == numFloors-1 {
-					d = elevio.MD_Down
-				} else if a == 0 {
-					d = elevio.MD_Up
-				}
-				elevio.SetMotorDirection(d)
-			}
-
-		case a := <-drv_obstr:
-			if !init {
-				fmt.Printf("Obstruction update: %+v\n", a)
-				if a {
-					elevio.SetMotorDirection(elevio.MD_Stop)
-				} else {
-					elevio.SetMotorDirection(d)
-				}
-			}
-
-		case a := <-drv_stop:
-			fmt.Printf("Stop button: %+v\n", a)
-			for f := 0; f < numFloors; f++ {
-				for b := elevio.ButtonType(0); b < 3; b++ {
-					elevio.SetButtonLamp(b, f, false)
-				}
-			}
+				// Sending the first element of elevatorOrders through the drv_newOrder channel
+				// We don't have to worry about the possibility of it being the same order that we are attending to 
+				// This is because we only set the current direction to the same as it was
+				drv_newOrder <- first_element
 		}
 	}
 }
