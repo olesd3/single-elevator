@@ -11,12 +11,3 @@ require Driver-go v0.0.0
 replace Driver-go => ./Driver-go
 ```
 Where `./Driver-go` is the relative path to this folder, after you have downloaded it.
-
-
-
-
-
-
-
-
-
