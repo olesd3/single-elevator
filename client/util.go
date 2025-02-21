@@ -8,63 +8,44 @@ import (
 
 func trackPosition(drv_floors2 chan int, d *elevio.MotorDirection) {
 	for {
-		select {
-		case a := <-drv_floors2:
-			// Even indices are floors, odd indices are in-between floors
-			// Get the current floor
-			currentFloor := 0
-			for i := 0; i < 2*numFloors-1; i++ {
-				if posArray[i] {
-					currentFloor = i
-				}
+		a := <-drv_floors2
+		// Even indices are floors, odd indices are in-between floors
+		// Get the current floor
+		mutex_d.Lock()
+		currentFloor := 0
+		for i := 0; i < 2*numFloors-1; i++ {
+			if posArray[i] {
+				currentFloor = i
 			}
+		}
 
-			if a == -1 {
-				if *d == elevio.MD_Up {
-					mu2.Lock()
-					posArray[currentFloor] = false
-					posArray[currentFloor+1] = true
-					mu2.Unlock()
-				}
-				if *d == elevio.MD_Down {
-					mu2.Lock()
-					posArray[currentFloor] = false
-					posArray[currentFloor-1] = true
-					mu2.Unlock()
-				}
-			} else {
-				mu2.Lock()
+		if a == -1 {
+			if *d == elevio.MD_Up {
+				mutex_posArray.Lock()
 				posArray[currentFloor] = false
-				posArray[a*2] = true
-				mu2.Unlock()
+				posArray[currentFloor+1] = true
+				mutex_posArray.Unlock()
 			}
-
-			fmt.Printf("Position array: %+v\n", posArray)
+			if *d == elevio.MD_Down {
+				mutex_posArray.Lock()
+				posArray[currentFloor] = false
+				posArray[currentFloor-1] = true
+				mutex_posArray.Unlock()
+			}
+		} else {
+			mutex_posArray.Lock()
+			posArray[currentFloor] = false
+			posArray[a*2] = true
+			mutex_posArray.Unlock()
 		}
+
+		//fmt.Printf("Position array: %+v\n", posArray)
+		mutex_d.Unlock()
 	}
 }
 
-func addOrder(floor int, direction OrderDirection, typeOrder OrderType) {
-	exists := false
 
-	if typeOrder == cab {
-		for _, order := range elevatorOrders {
-			if order.floor == floor && order.orderType == cab {
-				exists = true
-			}
-		}
-	} else if typeOrder == hall {
-		for _, order := range elevatorOrders {
-			if order.floor == floor && order.direction == direction && order.orderType == hall {
-				exists = true
-			}
-		}
-	}
 
-	if !exists {
-		elevatorOrders = append(elevatorOrders, Order{floor: floor, direction: direction, orderType: typeOrder})
-	}
-}
 
 // Helper function to convert direction to string
 func directionToString(direction OrderDirection) string {
@@ -90,56 +71,37 @@ func printOrders(orders []Order) {
 	}
 }
 
-func reverseDirection(d *MotorDirection) {
+func printElevatorOrders(elevatorOrders []Order) {
+	printOrders(elevatorOrders)
+}
+
+func reverseDirection(d *elevio.MotorDirection) {
 	switch {
-	case *d == MD_Down:
-		*d = MD_Up
-	case *d == MD_Up:
-		*d = MD_Down
-	case *d == MD_Stop:
+	case *d == elevio.MD_Down:
+		*d = elevio.MD_Up
+	case *d == elevio.MD_Up:
+		*d = elevio.MD_Down
+	case *d == elevio.MD_Stop:
 	}
 }
 
-func updatePosArray(dir MotorDirection, posArray *[2*numFloors - 1]bool) {
+// This function is only used internally in the sorting functions
+func updatePosArray(dir elevio.MotorDirection, posArray *[2*numFloors - 1]bool) {
 	// Reset all values in the array to false
 	for i := range posArray {
 		(posArray[i]) = false
 	}
 
 	switch {
-	case dir == MD_Down:
+	case dir == elevio.MD_Down:
 		posArray[2*numFloors-2] = true
-	case dir == MD_Up:
+	case dir == elevio.MD_Up:
 		posArray[0] = true
 	default:
 		panic("Error: MotorDirection MD_Stop passed into updatePosArray function")
 	}
 }
 
-func EventDirStop(receiver chan<- MotorDirection) {
-	prev := lastDir
-
-	direction := newDir
-
-	if direction != prev {
-		receiver <- direction
-	}
-}
-
-func handleNewOrder(newOrderTrigger chan bool) {
-	for {
-		//Blocks until we receive a new order
-
-		received_order := <-newOrderTrigger
-		// If we get a new order sort elevatorOrders
-		if received_order {
-			mu1.Lock()
-			sortAllOrders(&elevatorOrders, direction, posArray)
-			mu1.Unlock()
-		}
-		currentOrder = elevatorOrders[0]
-	}
-}
 
 func extractPos() float32 {
 	currentFloor := float32(0)
@@ -151,82 +113,98 @@ func extractPos() float32 {
 	return currentFloor
 }
 
-// Global: currentOrder,   Local: local_currentOrder
-func AttendToSpecificOrder(d *elevio.MotorDirection) {
-	// Defining a boolean value that dictates whether or not we have a current order
-	haveCurrentOrder := false
-	local_currentOrder := Order{floor: 0, direction: down, orderType: hall}
+func addOrder(floor int, direction OrderDirection, typeOrder OrderType) {
+	exists := false
 
-	for {
-		switch {
-		case !haveCurrentOrder:
-			// Case 1: No current order exists:
-			blocker := <-receiver
-			if blocker {
-				haveCurrentOrder = true
+	if typeOrder == cab {
+		for _, order := range elevatorOrders {
+			if order.floor == floor && order.orderType == cab {
+				exists = true
 			}
-
-		case haveCurrentOrder:
-			haveCompletedOrder := false
-			for !haveCompletedOrder {
-				switch {
-				case float32(currentOrder.floor) > extractPos():
-					elevio.SetMotorDirection(elevio.MD_Up)
-				case float32(currentOrder.floor) < extractPos():
-					elevio.SetMotorDirection(elevio.MD_Down)
-				case float32(currentOrder.floor) == extractPos():
-					elevio.SetMotorDirection(elevio.MD_Stop)
-
-					// Popping the order from elevatorOrders
-					// Mutex lock
-					time.Sleep(3000 * time.Millisecond)
-					// Mutex unlock
-
-					// Sort the elevatorOrders for safety sake
-
-				}
+		}
+	} else if typeOrder == hall {
+		for _, order := range elevatorOrders {
+			if order.floor == floor && order.direction == direction && order.orderType == hall {
+				exists = true
 			}
-			// Case 2: Current order exists
-			/*
-				local_currentOrder = currentOrder
-				for local_currentOrder == currentOrder {
-
-					current_elevator_position := extractPos()
-					order_floor := float32(currentOrder.floor)
-
-					switch {
-						case order_floor > current_elevator_position:
-							elevio.SetMotorDirection(elevio.MD_Up)
-						case order_floor < current_elevator_position:
-							elevio.SetMotorDirection(elevio.MD_Down)
-						case order_floor == current_elevator_position:
-							elevio.SetMotorDirection(elevio.MD_Stop)
-
-							// If it hasnt change for a while, we're idle
-							time.Sleep(3000 * time.Millisecond)
-							// TODO: opens doors, door lights, close doors
-
-							// Find local_currentOrder in elevatorOrders and remove it
-
-							// Consider the rest of elevatorOrders
-							// If there are more orders:
-							//     set local to currentOrder
-							// Else if no more orders:
-							//     set haveCurrentOrder to false
-					}
-
-					}
-
-				}
-			*/
-
-			// While (Current order hasn't changed) => GoTo that floor
-
-			// When done with the order => remove it from elevatorOrders
-
-			// Now that we've popped the order, set, if there still are elements in elevatorOrders, set the new current order to the first element in elevatorOrders
-
 		}
 	}
 
+	if !exists {
+		elevatorOrders = append(elevatorOrders, Order{floor: floor, direction: direction, orderType: typeOrder})
+	}
+}
+
+
+
+// This function deletes relevant orders at the same floor as the current order, 
+// It takes into account if there are multiple orders to the same floor
+// Since elevatorOrders is sorted, we can just delete from left to right until there are no orders with the same floor left
+func PopOrders() { 
+	//fmt.Printf("Before deleting orders from elevatorOrders: %v\n", elevatorOrders)
+	if len(elevatorOrders) != 0 {
+		floor_to_pop := elevatorOrders[0].floor
+
+		// Figure out how many elements to delete
+		ndelete := 0
+		for _, order := range elevatorOrders {
+			if order.floor == floor_to_pop {
+				ndelete += 1
+			} else {
+				break
+			}
+		}
+
+		// Now that we've calculated the number of elements to delete, update elevatorOrders
+		elevatorOrders = elevatorOrders[ndelete:]
+	}
+	//fmt.Printf("After deleting orders from elevatorOrders: %v\n", elevatorOrders)
+}
+
+func changeDirBasedOnCurrentOrder(d * elevio.MotorDirection, current_order Order, current_floor float32) {
+	switch {
+		case current_floor > float32(current_order.floor):
+			*d = elevio.MD_Down
+		case current_floor < float32(current_order.floor):
+			*d = elevio.MD_Up
+		case current_floor == float32(current_order.floor):
+			*d = elevio.MD_Stop
+	}
+}
+
+// This function will attend to the current order, it
+func attendToSpecificOrder(d * elevio.MotorDirection, drv_floors chan int, drv_newOrder chan Order, posArray * [2*numFloors - 1]bool) {
+	current_order := Order{0,-1,0}
+	for {
+		select {
+			case a := <- drv_floors: 		                      // Triggers when we arrive at a new floor
+				if a == current_order.floor {                     // Check if our new floor is equal to the floor of the order
+                                        
+					lockMutexes(&mutex_d, &mutex_elevatorOrders)  // Set direction to stop and delete relevant orders from elevatorOrders
+					*d = elevio.MD_Stop
+					elevio.SetMotorDirection(*d)
+					PopOrders()
+					unlockMutexes(&mutex_d, &mutex_elevatorOrders)
+					
+					
+					time.Sleep(3000 * time.Millisecond)           // Wait for three seconds
+
+					                                              // After deleting the relevant orders at our floor => find, if any, the next currentOrder
+					lockMutexes(&mutex_d, &mutex_elevatorOrders)
+					if len(elevatorOrders) != 0 { 	
+						current_order = elevatorOrders[0]
+						changeDirBasedOnCurrentOrder(d, current_order, float32(a))
+						elevio.SetMotorDirection(*d)
+					} 
+					unlockMutexes(&mutex_d, &mutex_elevatorOrders)
+				}
+			case a := <- drv_newOrder:                 // If we get a new order => update current order and see if we need to redirect our elevator
+				current_order = a
+				lockMutexes(&mutex_d, &mutex_posArray)
+				current_position := extractPos()
+				changeDirBasedOnCurrentOrder(d, current_order, current_position)
+				elevio.SetMotorDirection(*d)
+				unlockMutexes(&mutex_d, &mutex_posArray)
+		}
+	}
 }
