@@ -41,7 +41,7 @@ func main() {
 	drv_floors2 := make(chan int)
 	drv_obstr := make(chan bool)
 	drv_stop := make(chan bool)
-	drv_newOrder := make(chan Order)
+	drv_newOrder := make(chan Order, 10) // Buffered channel with capacity of 10
 	drv_finishedInitialization := make(chan bool)
 
 	go elevio.PollButtons(drv_buttons)         // Starts checking for button updates
