@@ -1,7 +1,9 @@
 package main
 
-import "Driver-go/elevio"
-import "fmt"
+import (
+	"Driver-go/elevio"
+	"math"
+)
 
 type ButtonType int
 
@@ -89,8 +91,7 @@ func orderInContainer(order_slice []Order, order_ Order) bool {
 	return false
 }
 
-func sortOrdersInDirection(elevatorOrders []Order, d elevio.MotorDirection, posArray [2*numFloors - 1]bool) ([]Order, []Order) {
-	//Todo: Lock elevatorOrders with mutex
+func sortOrdersInDirection(elevatorOrders []Order, d elevio.MotorDirection, posArray [2*numFloors - 1]bool) ([]Order, []Order, elevio.MotorDirection) {
 
 	highestOrders := findHighestOrders(elevatorOrders)
 	lowestOrders := findLowestOrders(elevatorOrders)
@@ -102,6 +103,42 @@ func sortOrdersInDirection(elevatorOrders []Order, d elevio.MotorDirection, posA
 			currentFloor = float32(i) / 2
 		}
 	}
+
+	// Section_START handle d==MD_Stop
+	if d == elevio.MD_Stop {
+		// Find direction based on cab order
+		num_cabOrdersAbove := 0
+		num_cabOrdersBelow := 0
+		closest := Order{100000, 1, 1}
+
+		for _, order := range elevatorOrders {
+			floor_order := float32(order.floor)
+			if math.Abs(float64(currentFloor)-float64(order.floor)) < float64(closest.floor) {
+				closest = order
+			}
+			switch {
+			case floor_order > currentFloor:
+				num_cabOrdersAbove += 1
+			case floor_order < currentFloor:
+				num_cabOrdersBelow += 1
+			}
+		}
+
+		switch {
+		case num_cabOrdersAbove > num_cabOrdersBelow:
+			d = elevio.MD_Up
+		case num_cabOrdersAbove < num_cabOrdersBelow:
+			d = elevio.MD_Down
+		case num_cabOrdersAbove == num_cabOrdersBelow:
+			if float32(closest.floor) > float32(currentFloor) {
+				d = elevio.MD_Up
+			} else {
+				d = elevio.MD_Down
+			}
+		}
+	}
+
+	// Section_END handle d==MD_Stop
 
 	//Based current direction => find all the equidirectional orders plus potential extremities
 	//Store the relevant orders in relevantOrders and the rest in irrelevantOrders
@@ -149,7 +186,6 @@ func sortOrdersInDirection(elevatorOrders []Order, d elevio.MotorDirection, posA
 	//Now that we've seperated the relevant and irrellevant orders from each other, we sort the relevant part
 	//If the current direction is up, we sort them in ascending order
 	if d == elevio.MD_Up {
-		//Perform bubblesort in ascending order
 		n := len(relevantOrders)
 		for i := 0; i < n-1; i++ {
 			// Last i elements are already sorted
@@ -177,7 +213,7 @@ func sortOrdersInDirection(elevatorOrders []Order, d elevio.MotorDirection, posA
 		}
 	}
 
-	return relevantOrders, irrelevantOrders
+	return relevantOrders, irrelevantOrders, d
 }
 
 func sortAllOrders(elevatorOrders *[]Order, d elevio.MotorDirection, posArray [2*numFloors - 1]bool) {
@@ -187,7 +223,7 @@ func sortAllOrders(elevatorOrders *[]Order, d elevio.MotorDirection, posArray [2
 
 	// Handle that rare case where the motordirection is MD_Stop and we have multiple orders
 
-	fmt.Printf("Made it past the inital checks in sortAllOrders\n")
+	// fmt.Printf("Made it past the inital checks in sortAllOrders\n")
 
 	// Creating the datatypes specfic to our function
 	copy_posArray := posArray
@@ -198,7 +234,7 @@ func sortAllOrders(elevatorOrders *[]Order, d elevio.MotorDirection, posArray [2
 	firstSection := []Order{}
 
 	irrelevantOrders = *elevatorOrders
-	relevantOrders, irrelevantOrders = sortOrdersInDirection(irrelevantOrders, d, copy_posArray)
+	relevantOrders, irrelevantOrders, d = sortOrdersInDirection(irrelevantOrders, d, copy_posArray)
 	firstSection = relevantOrders
 
 	if len(irrelevantOrders) == 0 {
@@ -212,7 +248,7 @@ func sortAllOrders(elevatorOrders *[]Order, d elevio.MotorDirection, posArray [2
 	reverseDirection(&d)
 	updatePosArray(d, &copy_posArray)
 
-	relevantOrders, irrelevantOrders = sortOrdersInDirection(irrelevantOrders, d, copy_posArray)
+	relevantOrders, irrelevantOrders, d = sortOrdersInDirection(irrelevantOrders, d, copy_posArray)
 	secondSection = relevantOrders
 
 	if len(irrelevantOrders) == 0 {
@@ -225,7 +261,7 @@ func sortAllOrders(elevatorOrders *[]Order, d elevio.MotorDirection, posArray [2
 	thirdSection := []Order{}
 	reverseDirection(&d)
 	updatePosArray(d, &copy_posArray)
-	relevantOrders, _ = sortOrdersInDirection(irrelevantOrders, d, copy_posArray)
+	relevantOrders, _, _ = sortOrdersInDirection(irrelevantOrders, d, copy_posArray)
 	thirdSection = relevantOrders
 	// End - Third section
 

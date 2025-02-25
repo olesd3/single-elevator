@@ -9,27 +9,27 @@ import (
 const numFloors = 4
 
 var (
-	elevatorOrders                  []Order
-	mutex_elevatorOrders            sync.Mutex
+	elevatorOrders       []Order
+	mutex_elevatorOrders sync.Mutex
 )
 
 var (
-	posArray            [2*numFloors - 1]bool
-	mutex_posArray      sync.Mutex
+	posArray       [2*numFloors - 1]bool
+	mutex_posArray sync.Mutex
 )
 
 var mutex_d sync.Mutex
 
 func lockMutexes(mutexes ...*sync.Mutex) {
-    for _, m := range mutexes {
-        m.Lock()
-    }
+	for _, m := range mutexes {
+		m.Lock()
+	}
 }
 
 func unlockMutexes(mutexes ...*sync.Mutex) {
-    for _, m := range mutexes {
-        m.Unlock()
-    }
+	for _, m := range mutexes {
+		m.Unlock()
+	}
 }
 
 func main() {
@@ -52,13 +52,12 @@ func main() {
 
 	var d elevio.MotorDirection = elevio.MD_Down
 
-
 	// Section_START ---- Initialization
 
 	go func() {
 		elevio.SetMotorDirection(d)
 		for {
-			a := <- drv_floors
+			a := <-drv_floors
 			if a == 0 {
 				d = elevio.MD_Stop
 				elevio.SetMotorDirection(d)
@@ -66,59 +65,52 @@ func main() {
 			}
 		}
 		drv_finishedInitialization <- true
-	} ()
+	}()
 
-	<- drv_finishedInitialization
+	<-drv_finishedInitialization
 
 	fmt.Printf("Initialization finished\n")
 
 	// Section_END ---- Initialization
 
-
 	go trackPosition(drv_floors2, &d) // Starts tracking the position of the elevator
-	go attendToSpecificOrder(&d, drv_floors, drv_newOrder, &posArray)
+	go attendToSpecificOrder(&d, drv_floors, drv_newOrder)
 
 	for {
 		select {
-			case a := <-drv_buttons:
-				// Gets a new order
-				// Adds it to elevatorOrders and sorts
+		case a := <-drv_buttons:
+			// Gets a new order
+			// Adds it to elevatorOrders and sorts
+			lockMutexes(&mutex_elevatorOrders, &mutex_d, &mutex_posArray)
 
-				switch {
-					case a.Button == elevio.BT_HallUp:
-						mutex_elevatorOrders.Lock()
-						addOrder(a.Floor, up, hall)
-						mutex_elevatorOrders.Unlock()
-					case a.Button == elevio.BT_HallDown:
-						mutex_elevatorOrders.Lock()
-						addOrder(a.Floor, down, hall)
-						mutex_elevatorOrders.Unlock()
-					case a.Button == elevio.BT_Cab:
-						mutex_elevatorOrders.Lock()
-						addOrder(a.Floor, 0, cab)
-						mutex_elevatorOrders.Unlock()
-				}
+			switch {
+			case a.Button == elevio.BT_HallUp:
+				addOrder(a.Floor, up, hall)
+			case a.Button == elevio.BT_HallDown:
+				addOrder(a.Floor, down, hall)
+			case a.Button == elevio.BT_Cab:
+				addOrder(a.Floor, 0, cab)
+			}
 
-				
-				lockMutexes(&mutex_elevatorOrders, &mutex_d, &mutex_posArray)
+			// fmt.Printf("Added order, length of elevatorOrders is now: %d\n", len(elevatorOrders))
+			// fmt.Printf("Added order, elevatorOrders is now: %v\n", elevatorOrders)
+			fmt.Printf("Added order, current direction is now: %v\n", d)
+			// fmt.Printf("Added order, positionArray is now: %v\n", posArray)
 
-				fmt.Printf("Added order, length of elevatorOrders is now: %d\n", len(elevatorOrders))
-				fmt.Printf("Added order, elevatorOrders is now: %v\n", elevatorOrders)
-				fmt.Printf("Added order, current direction is now: %v\n", d)
-				fmt.Printf("Added order, positionArray is now: %v\n", posArray)
+			sortAllOrders(&elevatorOrders, d, posArray)
+			// fmt.Printf("Sorted order, length of elevatorOrders is now: %d\n", len(elevatorOrders))
 
-				sortAllOrders(&elevatorOrders, d, posArray)
-				fmt.Printf("Sorted order, length of elevatorOrders is now: %d\n", len(elevatorOrders))
-				
+			first_element := elevatorOrders[0]
 
-				first_element := elevatorOrders[0]
-				unlockMutexes(&mutex_elevatorOrders, &mutex_d, &mutex_posArray)
-				fmt.Printf("Sorted order\n")
+			// fmt.Printf("Sorted order\n")
 
-				// Sending the first element of elevatorOrders through the drv_newOrder channel
-				// We don't have to worry about the possibility of it being the same order that we are attending to 
-				// This is because we only set the current direction to the same as it was
-				drv_newOrder <- first_element
+			fmt.Printf("ElevatorOrders is now: %v\n", elevatorOrders)
+
+			// Sending the first element of elevatorOrders through the drv_newOrder channel
+			// We don't have to worry about the possibility of it being the same order that we are attending to
+			// This is because we only set the current direction to the same as it was
+			unlockMutexes(&mutex_elevatorOrders, &mutex_d, &mutex_posArray)
+			drv_newOrder <- first_element
 		}
 	}
 }
