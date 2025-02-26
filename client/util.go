@@ -9,59 +9,59 @@ import (
 func trackPosition(drv_floors2 chan int, drv_DirectionChange chan elevio.MotorDirection, d *elevio.MotorDirection) {
 	for {
 		select {
-			case a := <-drv_floors2:
-				lockMutexes(&mutex_posArray, &mutex_d)
-				// Even indices are floors, odd indices are in-between floors
-				// Get the current floor
-				
-				currentFloor := 0
-				for i := 0; i < 2*numFloors-1; i++ {
-					if posArray[i] {
-						currentFloor = i
-					}
+		case a := <-drv_floors2:
+			lockMutexes(&mutex_posArray, &mutex_d)
+			// Even indices are floors, odd indices are in-between floors
+			// Get the current floor
+
+			currentFloor := 0
+			for i := 0; i < 2*numFloors-1; i++ {
+				if posArray[i] {
+					currentFloor = i
 				}
-	
-				if a == -1 {
-					if *d == elevio.MD_Up {
-						posArray[currentFloor] = false
-						posArray[currentFloor+1] = true
-					}
-					if *d == elevio.MD_Down {
-						posArray[currentFloor] = false
-						posArray[currentFloor-1] = true
-					}
-				} else {
-					
+			}
+
+			if a == -1 {
+				if *d == elevio.MD_Up {
 					posArray[currentFloor] = false
-					posArray[a*2] = true
-					
+					posArray[currentFloor+1] = true
 				}
-	
-				unlockMutexes(&mutex_posArray, &mutex_d)
-			case new_dir := <- drv_DirectionChange:
-				lockMutexes(&mutex_posArray, &mutex_d)
+				if *d == elevio.MD_Down {
+					posArray[currentFloor] = false
+					posArray[currentFloor-1] = true
+				}
+			} else {
 
-				currentFloor := 0
-				for i := 0; i < 2*numFloors-1; i++ {
-					if posArray[i] {
-						currentFloor = i
-					}
-				}
+				posArray[currentFloor] = false
+				posArray[a*2] = true
 
-				switch {
-					case new_dir == elevio.MD_Up:
-						posArray[currentFloor] = false
-						posArray[currentFloor+1] = true
-					case new_dir == elevio.MD_Down:
-						posArray[currentFloor] = false
-						posArray[currentFloor-1] = true
-					case new_dir == elevio.MD_Stop:
-			            // If the direction is alreadt MD_Stop we don't have to alter positionArray
+			}
+
+			unlockMutexes(&mutex_posArray, &mutex_d)
+		case new_dir := <-drv_DirectionChange:
+			lockMutexes(&mutex_posArray, &mutex_d)
+
+			currentFloor := 0
+			for i := 0; i < 2*numFloors-1; i++ {
+				if posArray[i] {
+					currentFloor = i
 				}
-				
-				unlockMutexes(&mutex_posArray, &mutex_d)
-		} 
-		
+			}
+
+			switch {
+			case new_dir == elevio.MD_Up:
+				posArray[currentFloor] = false
+				posArray[currentFloor+1] = true
+			case new_dir == elevio.MD_Down:
+				posArray[currentFloor] = false
+				posArray[currentFloor-1] = true
+			case new_dir == elevio.MD_Stop:
+				// If the direction is alreadt MD_Stop we don't have to alter positionArray
+			}
+
+			unlockMutexes(&mutex_posArray, &mutex_d)
+		}
+
 	}
 }
 
@@ -214,8 +214,8 @@ func attendToSpecificOrder(d *elevio.MotorDirection, drv_floors chan int, drv_ne
 
 					// Communicate with trackPosition if our direction was altered
 					unlockMutexes(&mutex_d, &mutex_posArray)
-					if prev_direction != new_direction {      
-						drv_DirectionChange <- new_direction 
+					if prev_direction != new_direction {
+						drv_DirectionChange <- new_direction
 					}
 					lockMutexes(&mutex_d, &mutex_posArray)
 				}
@@ -228,43 +228,44 @@ func attendToSpecificOrder(d *elevio.MotorDirection, drv_floors chan int, drv_ne
 			current_position := extractPos()
 			fmt.Printf("Received a new Order and current_order: %v, curren_posision: %v, current_direction: %v\n", current_order, current_position, *d)
 			switch {
-				// Case 1: HandleOrders sent a new Order and it is at the same floor
-				case *d == elevio.MD_Stop && current_position == float32(current_order.floor):
-					fmt.Printf("HandleOrders sent a new Order and it is at the same floor\n")
-					PopOrders()
-					time.Sleep(3000 * time.Millisecond) // Wait for three seconds
+			// Case 1: HandleOrders sent a new Order and it is at the same floor
+			case *d == elevio.MD_Stop && current_position == float32(current_order.floor):
+				fmt.Printf("HandleOrders sent a new Order and it is at the same floor\n")
+				PopOrders()
 
-					// After deleting the relevant orders at our floor => find, if any, find the next currentOrder
-					if len(elevatorOrders) != 0 {
-						current_order = elevatorOrders[0]
-						prev_direction := *d
-						changeDirBasedOnCurrentOrder(d, current_order, float32(current_order.floor))
-						new_direction := *d
-						elevio.SetMotorDirection(*d)    
+				time.Sleep(3000 * time.Millisecond) // Wait for three seconds
 
-						// Communicate with trackPosition if our direction was altered
-						unlockMutexes(&mutex_d, &mutex_posArray)
-						if prev_direction != new_direction {     
-							drv_DirectionChange <- new_direction
-						}
-						lockMutexes(&mutex_d, &mutex_posArray)
-					}
-
-				// Case 2: HandleOrders sent a new Order and it is at a differnt floor
-				case current_position != float32(current_order.floor):
-					fmt.Printf("HandleOrders sent a new Order and it is at a differnt floor\n")
-					current_position := extractPos()
+				// After deleting the relevant orders at our floor => find, if any, find the next currentOrder
+				if len(elevatorOrders) != 0 {
+					current_order = elevatorOrders[0]
 					prev_direction := *d
-					changeDirBasedOnCurrentOrder(d, current_order, current_position)
+					changeDirBasedOnCurrentOrder(d, current_order, float32(current_order.floor))
 					new_direction := *d
 					elevio.SetMotorDirection(*d)
 
 					// Communicate with trackPosition if our direction was altered
 					unlockMutexes(&mutex_d, &mutex_posArray)
-					if prev_direction != new_direction {      
-						drv_DirectionChange <- new_direction 
+					if prev_direction != new_direction {
+						drv_DirectionChange <- new_direction
 					}
 					lockMutexes(&mutex_d, &mutex_posArray)
+				}
+
+			// Case 2: HandleOrders sent a new Order and it is at a differnt floor
+			case current_position != float32(current_order.floor):
+				fmt.Printf("HandleOrders sent a new Order and it is at a differnt floor\n")
+				current_position := extractPos()
+				prev_direction := *d
+				changeDirBasedOnCurrentOrder(d, current_order, current_position)
+				new_direction := *d
+				elevio.SetMotorDirection(*d)
+
+				// Communicate with trackPosition if our direction was altered
+				unlockMutexes(&mutex_d, &mutex_posArray)
+				if prev_direction != new_direction {
+					drv_DirectionChange <- new_direction
+				}
+				lockMutexes(&mutex_d, &mutex_posArray)
 			}
 
 			unlockMutexes(&mutex_d, &mutex_elevatorOrders, &mutex_posArray)
