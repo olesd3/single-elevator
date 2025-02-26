@@ -41,7 +41,8 @@ func main() {
 	drv_floors2 := make(chan int)
 	drv_obstr := make(chan bool)
 	drv_stop := make(chan bool)
-	drv_newOrder := make(chan Order, 10) // Buffered channel with capacity of 10
+	drv_newOrder := make(chan Order) 
+	drv_DirectionChange := make(chan elevio.MotorDirection)
 	drv_finishedInitialization := make(chan bool)
 
 	go elevio.PollButtons(drv_buttons)         // Starts checking for button updates
@@ -73,14 +74,15 @@ func main() {
 
 	// Section_END ---- Initialization
 
-	go trackPosition(drv_floors2, &d) // Starts tracking the position of the elevator
-	go attendToSpecificOrder(&d, drv_floors, drv_newOrder)
+	go trackPosition(drv_floors2, drv_DirectionChange, &d) // Starts tracking the position of the elevator
+	go attendToSpecificOrder(&d, drv_floors, drv_newOrder, drv_DirectionChange)
 
 	for {
 		select {
 		case a := <-drv_buttons:
 			// Gets a new order
 			// Adds it to elevatorOrders and sorts
+
 			lockMutexes(&mutex_elevatorOrders, &mutex_d, &mutex_posArray)
 
 			switch {
@@ -92,10 +94,9 @@ func main() {
 				addOrder(a.Floor, 0, cab)
 			}
 
-			// fmt.Printf("Added order, length of elevatorOrders is now: %d\n", len(elevatorOrders))
-			// fmt.Printf("Added order, elevatorOrders is now: %v\n", elevatorOrders)
 			fmt.Printf("Added order, current direction is now: %v\n", d)
-			// fmt.Printf("Added order, positionArray is now: %v\n", posArray)
+			fmt.Printf("Added order, elevatorOrders is now: %v\n", elevatorOrders)
+			fmt.Printf("Added order, positionArray is now: %v\n", posArray)
 
 			sortAllOrders(&elevatorOrders, d, posArray)
 			// fmt.Printf("Sorted order, length of elevatorOrders is now: %d\n", len(elevatorOrders))
@@ -110,6 +111,7 @@ func main() {
 			// We don't have to worry about the possibility of it being the same order that we are attending to
 			// This is because we only set the current direction to the same as it was
 			unlockMutexes(&mutex_elevatorOrders, &mutex_d, &mutex_posArray)
+
 			drv_newOrder <- first_element
 		}
 	}
