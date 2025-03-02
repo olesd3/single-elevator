@@ -121,7 +121,6 @@ func PollStopButton(receiver chan<- bool) {
 		if v != prev {
 			receiver <- v
 		}
-		// fmt.Printf("Button state: %t\n", v)
 		prev = v
 	}
 }
