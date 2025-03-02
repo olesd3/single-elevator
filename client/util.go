@@ -202,6 +202,17 @@ func attendToSpecificOrder(d *elevio.MotorDirection, drv_floors chan int, drv_ne
 				elevio.SetMotorDirection(*d)
 				PopOrders()
 
+				// Turn off the button lamp at the current floor
+				if current_order.orderType == hall { // Hall button
+					if current_order.direction == up { // Hall up
+						elevio.SetButtonLamp(elevio.BT_HallUp, current_order.floor, false)
+					} else { // Hall down
+						elevio.SetButtonLamp(elevio.BT_HallDown, current_order.floor, false)
+					}
+				} else { // Cab button
+					elevio.SetButtonLamp(elevio.BT_Cab, current_order.floor, false)
+				}
+				
 				time.Sleep(3000 * time.Millisecond) // Wait for three seconds
 
 				// After deleting the relevant orders at our floor => find, if any, the next currentOrder

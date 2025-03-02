@@ -19,6 +19,11 @@ var (
 	mutex_posArray sync.Mutex
 )
 
+var (
+	ableToCloseDoors bool
+	mutex_doors sync.Mutex
+)
+
 var mutex_d sync.Mutex
 
 func lockMutexes(mutexes ...*sync.Mutex) {
@@ -82,11 +87,13 @@ func main() {
 
 	for {
 		select {
-		case a := <-drv_buttons:
+		case a := <-drv_buttons: // New button update
 			// Gets a new order
 			// Adds it to elevatorOrders and sorts
 
 			time.Sleep(30 * time.Millisecond)
+
+			elevio.setButtonLamp(a.Button, a.Floor, true)
 
 			lockMutexes(&mutex_elevatorOrders, &mutex_d, &mutex_posArray)
 
@@ -124,6 +131,18 @@ func main() {
 			// 		d = elevio.MD_Stop
 			// 		elevio.SetMotorDirection(d)
 			// 	}
+
+			case a := <- drv_obstr: // Obstruction switch pressed (meaning doors are opened)
+				// Unable to close the doors until obstruction switch is released
+				if a { // If it is on
+					lockMutexes(&mutex_doors)
+					ableToCloseDoors = false
+					unlockMutexes(&mutex_doors)
+				} else { // If it is off
+					lockMutexes(&mutex_doors)
+					ableToCloseDoors = true
+					unlockMutexes(&mutex_doors)
+				}
 		}
 	}
 }
