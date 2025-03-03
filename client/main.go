@@ -40,8 +40,30 @@ func unlockMutexes(mutexes ...*sync.Mutex) {
 	}
 }
 
-func main() {
+func turnOffLights(current_order Order, allFloors bool) {
+	switch {
+	case !allFloors:
+		// Turn off the button lamp at the current floor
+		if current_order.orderType == hall { // Hall button
+			if current_order.direction == up { // Hall up
+				elevio.SetButtonLamp(elevio.BT_HallUp, current_order.floor, false)
+			} else { // Hall down
+				elevio.SetButtonLamp(elevio.BT_HallDown, current_order.floor, false)
+			}
+		} else { // Cab button
+			elevio.SetButtonLamp(elevio.BT_Cab, current_order.floor, false)
+		}
 
+	case allFloors:
+		for f := 0; f < numFloors; f++ {
+			for b := elevio.ButtonType(0); b < 3; b++ {
+				elevio.SetButtonLamp(b, f, false)
+			}
+		}
+	}
+}
+
+func main() {
 	elevio.Init("localhost:20002", numFloors)
 
 	drv_buttons := make(chan elevio.ButtonEvent)
@@ -62,7 +84,6 @@ func main() {
 	go elevio.PollStopButton(drv_stop)         // Starts checking for stop button presses
 
 	var d elevio.MotorDirection = elevio.MD_Down
-	
 
 	// Section_START ---- Initialization
 
@@ -77,6 +98,7 @@ func main() {
 			}
 		}
 		ableToCloseDoors = true
+		turnOffLights(Order{0, -1, 0}, true)
 		drv_finishedInitialization <- true
 	}()
 
@@ -130,25 +152,26 @@ func main() {
 
 			drv_newOrder <- first_element
 
-		case a := <- drv_stop:
+		case a := <-drv_stop:
 			switch {
-				case a == true:
-					// Rising edge, from unpressed to pressed
-					fmt.Printf("Received rising edge from drv_stop\n")
-					lockMutexes(&mutex_d)
-					elevio.SetStopLamp(true)
-					lastDirForStopFunction = d
-					elevio.SetMotorDirection(elevio.MD_Stop)
-					unlockMutexes(&mutex_d)
+			case a:
+				// Rising edge, from unpressed to pressed
+				fmt.Printf("Received rising edge from drv_stop\n")
+				lockMutexes(&mutex_d)
+				elevio.SetStopLamp(true)
+				lastDirForStopFunction = d
+				elevio.SetMotorDirection(elevio.MD_Stop)
+				unlockMutexes(&mutex_d)
 
-				case a == false:
-					// Falling edge, from pressed to unpressed
-					fmt.Printf("Received falling edge from drv_stop\n")
-					lockMutexes(&mutex_d)
-					elevio.SetMotorDirection(lastDirForStopFunction)
-					unlockMutexes(&mutex_d)
+			case !a:
+				// Falling edge, from pressed to unpressed
+				fmt.Printf("Received falling edge from drv_stop\n")
+				lockMutexes(&mutex_d)
+				elevio.SetMotorDirection(lastDirForStopFunction)
+				unlockMutexes(&mutex_d)
 
-					elevio.SetStopLamp(false)
+				elevio.SetStopLamp(false)
+			}
 
 		// case a := <-drv_floors3:
 		// 	if a == 0 {
