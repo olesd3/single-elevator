@@ -3,7 +3,6 @@ package main
 import (
 	"Driver-go/elevio"
 	"fmt"
-	"time"
 )
 
 func trackPosition(drv_floors2 chan int, drv_DirectionChange chan elevio.MotorDirection, d *elevio.MotorDirection) {
@@ -22,6 +21,7 @@ func trackPosition(drv_floors2 chan int, drv_DirectionChange chan elevio.MotorDi
 			}
 
 			if a == -1 {
+
 				if *d == elevio.MD_Up {
 					posArray[currentFloor] = false
 					posArray[currentFloor+1] = true
@@ -34,6 +34,9 @@ func trackPosition(drv_floors2 chan int, drv_DirectionChange chan elevio.MotorDi
 
 				posArray[currentFloor] = false
 				posArray[a*2] = true
+
+				// Set the floor indicator
+				elevio.SetFloorIndicator(a)
 
 			}
 
@@ -187,6 +190,35 @@ func changeDirBasedOnCurrentOrder(d *elevio.MotorDirection, current_order Order,
 	}
 }
 
+// func tryToCloseDoors() {
+// 	for {
+// 		mutex_doors.Lock()
+// 		if ableToCloseDoors {
+// 			mutex_doors.Unlock()
+// 			fmt.Print("Able to close\n")
+// 			time.Sleep(3000 * time.Millisecond) // Wait for three seconds
+// 			break
+// 		} else {
+// 			mutex_doors.Unlock()
+// 			fmt.Print("Unable to close\n")
+// 			continue
+// 		}
+// 	}
+// }
+
+func turnOffLights(current_order Order) {
+	// Turn off the button lamp at the current floor
+	if current_order.orderType == hall { // Hall button
+		if current_order.direction == up { // Hall up
+			elevio.SetButtonLamp(elevio.BT_HallUp, current_order.floor, false)
+		} else { // Hall down
+			elevio.SetButtonLamp(elevio.BT_HallDown, current_order.floor, false)
+		}
+	} else { // Cab button
+		elevio.SetButtonLamp(elevio.BT_Cab, current_order.floor, false)
+	}
+}
+
 // This function will attend to the current order, it
 func attendToSpecificOrder(d *elevio.MotorDirection, drv_floors chan int, drv_newOrder chan Order, drv_DirectionChange chan elevio.MotorDirection) {
 	current_order := Order{0, -1, 0}
@@ -200,20 +232,10 @@ func attendToSpecificOrder(d *elevio.MotorDirection, drv_floors chan int, drv_ne
 				fmt.Printf("Changing direction\n")
 				*d = elevio.MD_Stop
 				elevio.SetMotorDirection(*d)
-				PopOrders()
 
-				// Turn off the button lamp at the current floor
-				if current_order.orderType == hall { // Hall button
-					if current_order.direction == up { // Hall up
-						elevio.SetButtonLamp(elevio.BT_HallUp, current_order.floor, false)
-					} else { // Hall down
-						elevio.SetButtonLamp(elevio.BT_HallDown, current_order.floor, false)
-					}
-				} else { // Cab button
-					elevio.SetButtonLamp(elevio.BT_Cab, current_order.floor, false)
-				}
-				
-				time.Sleep(3000 * time.Millisecond) // Wait for three seconds
+				turnOffLights(current_order)
+
+				PopOrders()
 
 				// After deleting the relevant orders at our floor => find, if any, the next currentOrder
 				if len(elevatorOrders) != 0 {
@@ -221,6 +243,9 @@ func attendToSpecificOrder(d *elevio.MotorDirection, drv_floors chan int, drv_ne
 					prev_direction := *d
 					changeDirBasedOnCurrentOrder(d, current_order, float32(a))
 					new_direction := *d
+
+					// tryToCloseDoors()
+
 					elevio.SetMotorDirection(*d)
 
 					// Communicate with trackPosition if our direction was altered
@@ -242,9 +267,10 @@ func attendToSpecificOrder(d *elevio.MotorDirection, drv_floors chan int, drv_ne
 			// Case 1: HandleOrders sent a new Order and it is at the same floor
 			case *d == elevio.MD_Stop && current_position == float32(current_order.floor):
 				fmt.Printf("HandleOrders sent a new Order and it is at the same floor\n")
-				PopOrders()
 
-				time.Sleep(3000 * time.Millisecond) // Wait for three seconds
+				turnOffLights(current_order)
+
+				PopOrders()
 
 				// After deleting the relevant orders at our floor => find, if any, find the next currentOrder
 				if len(elevatorOrders) != 0 {
@@ -252,6 +278,9 @@ func attendToSpecificOrder(d *elevio.MotorDirection, drv_floors chan int, drv_ne
 					prev_direction := *d
 					changeDirBasedOnCurrentOrder(d, current_order, float32(current_order.floor))
 					new_direction := *d
+
+					// tryToCloseDoors()
+
 					elevio.SetMotorDirection(*d)
 
 					// Communicate with trackPosition if our direction was altered
@@ -264,11 +293,15 @@ func attendToSpecificOrder(d *elevio.MotorDirection, drv_floors chan int, drv_ne
 
 			// Case 2: HandleOrders sent a new Order and it is at a differnt floor
 			case current_position != float32(current_order.floor):
-				fmt.Printf("HandleOrders sent a new Order and it is at a differnt floor\n")
+				fmt.Printf("HandleOrders sent a new Order and it is at a different floor\n")
+
 				current_position := extractPos()
 				prev_direction := *d
 				changeDirBasedOnCurrentOrder(d, current_order, current_position)
 				new_direction := *d
+
+				// tryToCloseDoors()
+
 				elevio.SetMotorDirection(*d)
 
 				// Communicate with trackPosition if our direction was altered
