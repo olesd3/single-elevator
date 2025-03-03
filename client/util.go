@@ -283,15 +283,15 @@ func attendToSpecificOrder(d *elevio.MotorDirection, drv_floors chan int, drv_ne
 
 					elevio.SetMotorDirection(*d)
 
-					// Communicate with trackPosition if our direction was altered
-					unlockMutexes(&mutex_d, &mutex_posArray)
-					if prev_direction != new_direction {
-						drv_DirectionChange <- new_direction
-					}
-					lockMutexes(&mutex_d, &mutex_posArray)
-				}
-
-			// Case 2: HandleOrders sent a new Order and it is at a differnt floor
+          // Communicate with trackPosition if our direction was altered
+          unlockMutexes(&mutex_d, &mutex_posArray)
+          if prev_direction != new_direction {
+            drv_DirectionChange <- new_direction
+          }
+          lockMutexes(&mutex_d, &mutex_posArray)
+        }
+			
+      // Case 2: HandleOrders sent a new Order and it is at a differnt floor
 			case current_position != float32(current_order.floor):
 				fmt.Printf("HandleOrders sent a new Order and it is at a different floor\n")
 
@@ -309,10 +309,10 @@ func attendToSpecificOrder(d *elevio.MotorDirection, drv_floors chan int, drv_ne
 				if prev_direction != new_direction {
 					drv_DirectionChange <- new_direction
 				}
-				lockMutexes(&mutex_d, &mutex_posArray)
-			}
+        lockMutexes(&mutex_d, &mutex_posArray)
+      }
 
-			unlockMutexes(&mutex_d, &mutex_elevatorOrders, &mutex_posArray)
+				unlockMutexes(&mutex_d, &mutex_elevatorOrders, &mutex_posArray)	
 		}
 	}
 }

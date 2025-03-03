@@ -26,6 +26,8 @@ var (
 
 var mutex_d sync.Mutex
 
+var lastDirForStopFunction elevio.MotorDirection
+
 func lockMutexes(mutexes ...*sync.Mutex) {
 	for _, m := range mutexes {
 		m.Lock()
@@ -60,6 +62,7 @@ func main() {
 	go elevio.PollStopButton(drv_stop)         // Starts checking for stop button presses
 
 	var d elevio.MotorDirection = elevio.MD_Down
+	
 
 	// Section_START ---- Initialization
 
@@ -126,6 +129,26 @@ func main() {
 			unlockMutexes(&mutex_elevatorOrders, &mutex_d, &mutex_posArray)
 
 			drv_newOrder <- first_element
+
+		case a := <- drv_stop:
+			switch {
+				case a == true:
+					// Rising edge, from unpressed to pressed
+					fmt.Printf("Received rising edge from drv_stop\n")
+					lockMutexes(&mutex_d)
+					elevio.SetStopLamp(true)
+					lastDirForStopFunction = d
+					elevio.SetMotorDirection(elevio.MD_Stop)
+					unlockMutexes(&mutex_d)
+
+				case a == false:
+					// Falling edge, from pressed to unpressed
+					fmt.Printf("Received falling edge from drv_stop\n")
+					lockMutexes(&mutex_d)
+					elevio.SetMotorDirection(lastDirForStopFunction)
+					unlockMutexes(&mutex_d)
+
+					elevio.SetStopLamp(false)
 
 		// case a := <-drv_floors3:
 		// 	if a == 0 {
