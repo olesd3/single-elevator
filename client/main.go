@@ -19,6 +19,11 @@ var (
 	mutex_posArray sync.Mutex
 )
 
+var (
+	ableToCloseDoors bool
+	mutex_doors      sync.Mutex
+)
+
 var mutex_d sync.Mutex
 
 var lastDirForStopFunction elevio.MotorDirection
@@ -37,7 +42,7 @@ func unlockMutexes(mutexes ...*sync.Mutex) {
 
 func main() {
 
-	elevio.Init("localhost:15657", numFloors)
+	elevio.Init("localhost:20002", numFloors)
 
 	drv_buttons := make(chan elevio.ButtonEvent)
 	drv_floors := make(chan int)
@@ -71,6 +76,7 @@ func main() {
 				break
 			}
 		}
+		ableToCloseDoors = true
 		drv_finishedInitialization <- true
 	}()
 
@@ -85,11 +91,13 @@ func main() {
 
 	for {
 		select {
-		case a := <-drv_buttons:
+		case a := <-drv_buttons: // New button update
 			// Gets a new order
 			// Adds it to elevatorOrders and sorts
 
 			time.Sleep(30 * time.Millisecond)
+
+			elevio.SetButtonLamp(a.Button, a.Floor, true)
 
 			lockMutexes(&mutex_elevatorOrders, &mutex_d, &mutex_posArray)
 
@@ -141,6 +149,25 @@ func main() {
 					unlockMutexes(&mutex_d)
 
 					elevio.SetStopLamp(false)
+
+		// case a := <-drv_floors3:
+		// 	if a == 0 {
+		// 		d = elevio.MD_Stop
+		// 		elevio.SetMotorDirection(d)
+		// 	}
+
+		case a := <-drv_obstr: // Obstruction switch pressed (meaning doors are opened)
+			// Unable to close the doors until obstruction switch is released
+			if a { // If it is on
+				lockMutexes(&mutex_doors)
+				ableToCloseDoors = false
+				unlockMutexes(&mutex_doors)
+				fmt.Print("Obstruction on\n")
+			} else { // If it is off
+				lockMutexes(&mutex_doors)
+				ableToCloseDoors = true
+				unlockMutexes(&mutex_doors)
+				fmt.Print("Obstruction off\n")
 			}
 		}
 	}
